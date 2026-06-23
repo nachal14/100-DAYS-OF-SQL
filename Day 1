@@ -1,0 +1,45 @@
+The product manager doesn't want to wait for a monthly report to catch a problem.
+They've asked for a weekly pulse check: which categories are seeing user activity drop two weeks in a row.
+A leading indicator we might be losing engagement before churn shows up.
+
+SQL Approach
+========
+WITH weekgrouping AS (
+SELECT feature_category, 
+YEARWEEK(activity_date) as weeknumber,
+COUNT(DISTINCT user_id) as usercount
+FROM feature_engagement_log
+WHERE activity_date >= CURRENT_DATE - INTERVAL 8 WEEK
+GROUP BY 1,2
+),
+
+WOWcomparisons AS (
+select feature_category,
+weeknumber,
+usercount,
+LAG(usercount,1) OVER(PARTITION BY feature_category ORDER BY weeknumber) as prev_week_users,
+LAG(usercount,2) OVER(PARTITION BY feature_category ORDER BY weeknumber) as two_week_before_users
+from weekgrouping 
+)
+
+select feature_category,
+weeknumber,
+usercount,
+ROUND((prev_week_users - usercount)*100.0 / NULLIF(prev_week_users,0),1) as Droprate
+from WOWcomparisons
+where usercount < prev_week_users
+and prev_week_users < two_week_before_users;
+
+
+
+
+My approach:
+===
+
+→ Counted weekly active users per category, last 8 weeks only
+
+→ Used LAG() to pull last week's count and the week before that
+
+→ Flagged categories only where the drop happened twice in a row, not once
+First attempt used a self-join. It caught drops, but "two weeks in a row" got messy to express. Switched to LAG() with two lookback windows and the logic became one clean chain of comparisons instead of a tangled join condition.
+The insight: one bad week is noise. Two consecutive declines is a pattern worth flagging before it turns into churn next month.
