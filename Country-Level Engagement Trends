@@ -1,0 +1,66 @@
+Problem Statement
+======
+Identify countries that showed an upward trend in engagement (comments) between December 2019 and January 2020. 
+Engagement is measured by ranking countries based on total comment volume per month, where ties share the same rank without gaps.
+
+SQL Approach
+====
+/*
+ * Engagement Trend Analysis
+ * Objective: Identify countries with improved engagement rankings month-over-month.
+ */
+
+WITH user_comments_count AS (
+    -- Calculate total comments per country, per month
+    SELECT 
+        u.country,
+        DATE_FORMAT(c.created_at, "%Y-%M") AS yr_mon,
+        SUM(c.number_of_comments) AS total_comments
+    FROM fb_comments_count c
+    INNER JOIN fb_active_users u ON c.user_id = u.user_id
+    GROUP BY 1, 2
+),
+ranking AS (
+    -- Assign dense rank to countries within each month
+    SELECT 
+        country,
+        yr_mon,
+        DENSE_RANK() OVER (PARTITION BY yr_mon ORDER BY total_comments DESC) AS ranknum
+    FROM user_comments_count
+    WHERE yr_mon IN ("2019-December", "2020-January")
+)
+-- Compare performance: R1 (Dec) vs R2 (Jan)
+SELECT 
+    r1.country
+FROM ranking r1
+JOIN ranking r2 ON r1.country = r2.country
+WHERE r1.yr_mon = "2019-December" 
+  AND r2.yr_mon = "2020-January"
+  AND r1.ranknum > r2.ranknum;
+
+
+Engineering Notes & Interview Framing
+====
+1. Why DENSE_RANK()?
+The prompt specifically required that countries with the same total share the same rank and that the "next rank should increase by one."
+
+ROW_NUMBER() would have forced unique, arbitrary rankings on ties.
+
+RANK() would have skipped numbers (e.g., if two countries were tied for 1st, the next country would be 3rd).
+
+DENSE_RANK() is the correct choice here as it preserves tie-grouping while keeping the sequence consecutive (1, 1, 2...).
+
+2. Self-Join Logic
+=====
+The join effectively creates a temporal state machine. 
+By anchoring the join to specific strings ("2019-December" and "2020-January"), 
+I isolate the exact transition the product team is interested in. 
+The condition r1.ranknum > r2.ranknum translates the business requirement of an "improved rank" into a simple mathematical inequality 
+(e.g., moving from 5th place to 2nd place).
+
+3. Handling Nulls and Coverage
+======
+In this implementation, the INNER JOIN ensures that we only evaluate countries that were active (had comments) in both months.
+This prevents "newly active" countries from skewing the improvement metrics, as they wouldn't have a valid comparison point in the December dataset.
+
+This query demonstrates mastery of Window Functions for comparative analysis and the ability to map complex business rules to efficient relational set operations.
