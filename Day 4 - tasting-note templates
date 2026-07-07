@@ -1,0 +1,33 @@
+
+
+"Marketing wants to refresh our tasting-note templates. Before we rewrite anything, which flavor descriptors are we already leaning on hardest in our wine descriptions?"
+
+**The SQL Approach**
+
+- Four flavor keywords to check: plum, cherry, rose, hazelnut
+- Decision 1: LIKE vs full-text search. At this scale, four keyword checks don't justify standing up a search index. LIKE with wildcards is fine.
+- Decision 2: UNION vs UNION ALL. Each subquery returns a single count, one row. There's no duplicate row risk here, so UNION ALL is the correct choice, not UNION. UNION forces a distinct pass across the combined result for no reason since the rows are already guaranteed unique in this case.
+- Decision 3: four separate scans vs one pass. This is the real interview move. Four SELECT COUNT statements each scan the full table once. 
+That's four passes over the same data. A single query with conditional aggregation does it in one pass:
+
+```sql
+SELECT 
+    SUM(CASE WHEN description LIKE '%plum%' AND description NOT LIKE '%plums%' THEN 1 ELSE 0 END) AS plum_count,
+    SUM(CASE WHEN description LIKE '%cherry%' AND description NOT LIKE '%cherries%' THEN 1 ELSE 0 END) AS cherry_count,
+    SUM(CASE WHEN description LIKE '%rose%' AND description NOT LIKE '%roses%' THEN 1 ELSE 0 END) AS rose_count,
+    SUM(CASE WHEN description LIKE '%hazelnut%' AND description NOT LIKE '%hazelnuts%' THEN 1 ELSE 0 END) AS hazelnut_count
+FROM winemag_p1;
+```
+
+- Same output, one scan instead of four. On a small table it won't matter. On a large one, it's the difference between an instant query and a slow one.
+
+**The Insight**
+
+Stone fruit and red fruit descriptors (plum, cherry) will almost always outnumber floral or nutty notes (rose, hazelnut) in wine writing,
+because most tasting vocabulary defaults to fruit-forward language. 
+If cherry and plum dominate the counts, that's not a new finding, it's confirmation of an industry-wide pattern. 
+The number worth watching is how far behind rose and hazelnut are. A near-total absence tells marketing those descriptors aren't part of the current vocabulary at all, which is useful if they want to introduce them.
+
+**Interview Framing**
+
+"I'd say: my first version answered the question correctly but scanned the table four times, so I rewrote it as a single pass with conditional aggregation, same result, one scan."
